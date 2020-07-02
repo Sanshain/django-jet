@@ -10,13 +10,22 @@
 #-------------------------------------------------------------------------------
 
 import base64
+import random
 from itertools import chain
+
 
 class Secure:
 
     class Stub:
         Encrypt = staticmethod(lambda s,n: s)
         Decrypt = staticmethod(lambda s,n: s)
+
+    class Private:
+        rest = 67
+        statement = staticmethod(lambda x: 3**x % Secure.Private.rest)
+        post_statement = staticmethod(lambda a,b: a**b % Secure.Private.rest)
+
+
 
     class Simplest:
 
@@ -62,12 +71,14 @@ def Sniffer(func):
         # tp = 'out' if args[0].__class__.__name__ == 'Server' else 'in'
 
         print ("steal request to server: " + str(args[1:]))
+
         return_value = func(*args, **kwargs)
         print ("steal server response: " + str(return_value))
         return return_value
     return wrapper
 
 
+gs = 0
 
 class Server: # (object)
     username = "asa"
@@ -91,7 +102,14 @@ class Server: # (object)
         return rez
 
 
-    def Auth(self, name_password, key):
+    def Auth(self, name_password, key, open_key):
+
+        rkey = random.randint(0, 67)
+        r_open_key = Secure.Private.statement(rkey)
+
+        print (Secure.Private.post_statement(open_key, rkey))
+        print (Secure.Private.post_statement(r_open_key, key))
+
         name_password = name_password.split(':')
         if len(name_password) != 2: return 'wrong auth data'
         else:
@@ -100,10 +118,9 @@ class Server: # (object)
         self.token = "Non authorizated"
         if (self.username == name and self.password == self._decrypt(key, password)):
             self.token = "token " + base64.b64encode(self.username + self.password)
-            print 'token pushed: ' + self.token
-            key = 6
-            token = self._encrypt(self.token, key)
-            return token, key
+            print ('token pushed: ' + self.token)
+            token = self._encrypt(self.token, rkey)
+            return token, rkey
         # encrypt
         return self.token
 
@@ -126,11 +143,14 @@ class Client(object):
 
 
     def input_and_auth(self, name, password):
-        key = 5
+        key = random.randint(0, 67)
+        open_r = Secure.Private.statement(key)
+
+        print (key, open_r)
         cry_password = Secure.Encrypt(password, key)
-        token, key = self.request_for_auth(':'.join((name, cry_password)), key)
+        token, key = self.request_for_auth(':'.join((name, cry_password)), key, open_r)
         if token == "Non authorizated":
-            print "Non authorizated/ no token"
+            print ("Non authorizated/ no token")
             return None
         else:
             self.token = token.split(' ')[0] + ' ' + Secure.Decrypt(token.split(' ')[1], key)
@@ -139,15 +159,15 @@ class Client(object):
 
     def get_secure_content(self, token):
         realm, token = token.split(' ')
-        key = 7
+        key = random.randint(0, 67)
         cry_token = Secure.Encrypt(token, key)
         return self.request_for_content(realm + ' ' + cry_token, key)
 
 
     @Sniffer
-    def request_for_auth(self, name_password, key):
+    def request_for_auth(self, name_password, key, open_key):
 
-        token, key = self.server.Auth(name_password, key)
+        token, key = self.server.Auth(name_password, key, open_key)
         return token, key
 
     @Sniffer
