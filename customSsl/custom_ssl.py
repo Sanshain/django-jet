@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #-------------------------------------------------------------------------------
 # Name:        module1
 # Purpose:
@@ -9,9 +10,13 @@
 # Licence:     <your licence>
 #-------------------------------------------------------------------------------
 
+from .r_manager import RequestManager
+
 import base64
 import random
+import time
 from itertools import chain
+
 
 
 class Secure:
@@ -20,10 +25,15 @@ class Secure:
         Encrypt = staticmethod(lambda s,n: s)
         Decrypt = staticmethod(lambda s,n: s)
 
-    class Private:
+    class Private(object):
+
+        def __init__ (self, rest = 67): self.rest = rest
+        istatement = lambda self, x: 3**x % self.rest
+        ipost_statement = lambda self, a, b: a**b % self.rest
+
         rest = 67
-        statement = staticmethod(lambda x: 3**x % Secure.Private.rest)
-        post_statement = staticmethod(lambda a,b: a**b % Secure.Private.rest)
+        statement = staticmethod(lambda x, r=None: 3**x % (r or Secure.Private.rest))
+        post_statement = staticmethod(lambda a, b, r=None: a**b % (r or Secure.Private.rest))
 
 
 
@@ -86,6 +96,8 @@ class Server: # (object)
     token = None
     Content = 'secure content'
 
+    connections = RequestManager()
+
     def _encrypt(self, value, key):
         if ' ' in value:
             name, value = value.split(' ')
@@ -98,25 +110,62 @@ class Server: # (object)
         if value is tuple: value = value[1]
         elif value is str: value = value
 
+        # key - open_shift
+
+
         rez = Secure.Decrypt(value, key)
         return rez
 
 
-    def Auth(self, name_password, key, open_key):
+    def auth_petition(self):
 
-        rkey = random.randint(0, 67)
-        r_open_key = Secure.Private.statement(rkey)
 
-        print (Secure.Private.post_statement(open_key, rkey))
-        print (Secure.Private.post_statement(r_open_key, key))
+
+        skey = random.randint(0, 67)
+        r_open_shift = Secure.Private.statement(skey)
+
+        self.secure = Secure.Private(97999797)
+
+        # serv
+        pkey = random.randint(0, 67)
+        r_open_psw = self.secure.istatement(pkey)
+
+        conn_id = self.connections.append((skey, pkey, time.time()))
+
+
+        # serv:
+        # print secure.ipost_statement(r_open_psw_c, skey)
+
+        # print str(r_open_psw).rjust(8,'0'),  str(r_open_psw_c).rjust(8,'0')
+
+        return conn_id, r_open_shift, r_open_psw
+
+
+    # def Auth(self, name_password, key, open_key):
+    def Auth(self, name_password, open_shift, open_psw, conn_id):
+
+        skey, pkey, start_time = self.connections.pop(conn_id)                  # skey, pkey, start_time = self.connections[conn_id]
+
+        shift = Secure.Private.post_statement(open_shift, skey)
+        psw = secure.ipost_statement(open_psw, pkey)
+
+
+
+##        rkey = random.randint(0, 67)
+##        r_open_key = Secure.Private.statement(rkey)
+##
+##        print (Secure.Private.post_statement(open_key, rkey))
+##        print (Secure.Private.post_statement(r_open_key, key))
 
         name_password = name_password.split(':')
         if len(name_password) != 2: return 'wrong auth data'
         else:
-            name, password = name_password
+            name, cry_password = name_password
+
+
 
         self.token = "Non authorizated"
-        if (self.username == name and self.password == self._decrypt(key, password)):
+        if (self.username == name and self.password == self._decrypt(shift, cry_password)):
             self.token = "token " + base64.b64encode(self.username + self.password)
             print ('token pushed: ' + self.token)
             token = self._encrypt(self.token, rkey)
@@ -143,17 +192,31 @@ class Client(object):
 
 
     def input_and_auth(self, name, password):
-        key = random.randint(0, 67)
-        open_r = Secure.Private.statement(key)
 
-        print (key, open_r)
-        cry_password = Secure.Encrypt(password, key)
-        token, key = self.request_for_auth(':'.join((name, cry_password)), key, open_r)
+        conn_id, r_openk_shift, r_openk_psw = self.auth_appeal()
+
+
+        secure = Secure.Private(97999797)
+
+        rkey = random.randint(0, 67)
+        enc_psw = secure.ipost_statement(r_openk_psw, rkey)                     # получили симмет ключ на основе отк ключа, получ с сервера
+        print enc_psw
+
+        r_open_psw = secure.istatement(rkey) # =>                               # сгенерировали отк ключ для генерации симм кл на сервере
+
+        skey = random.randint(0, 67)
+        shift = Secure.Private.post_statement(r_openk_shift, skey)
+
+        r_open_shift = Secure.Private.statement(skey) # =>                      print str(shift) + '--'
+
+
+        cry_password = Secure.Encrypt(password, shift)
+        token, skey = self.request_for_auth(':'.join((name, cry_password)), r_open_shift, r_open_psw, conn_id)
         if token == "Non authorizated":
             print ("Non authorizated/ no token")
             return None
         else:
-            self.token = token.split(' ')[0] + ' ' + Secure.Decrypt(token.split(' ')[1], key)
+            self.token = token.split(' ')[0] + ' ' + Secure.Decrypt(token.split(' ')[1], skey)
             return self.token
 
 
@@ -165,9 +228,24 @@ class Client(object):
 
 
     @Sniffer
-    def request_for_auth(self, name_password, key, open_key):
+    def auth_appeal(self):
+        """
+        Peition for auth session (handshake appeal to the server)
+        """
+        conn_id, r_openk_shift, r_openk_psw = self.server.auth_petition()
 
-        token, key = self.server.Auth(name_password, key, open_key)
+        return conn_id, r_openk_shift, r_openk_psw
+
+        # print psw
+        # auth_data = psw(data) =>
+
+
+
+
+    @Sniffer
+    def request_for_auth(self, name_password, openk_shift, openk_psw, conn_id):
+
+        token, key = self.server.Auth(name_password, openk_shift, openk_psw, conn_id)
         return token, key
 
     @Sniffer
